@@ -49,7 +49,7 @@ public class docx2pdf {
 	 */
 	public File toPDF(String inputPath, String outputPath , String xconfPath)
 	{
-		System.out.println("자동 배포 테슽.");
+		System.out.println("자동 배포 TEST");
 		
 		File newFile = null;
 		
