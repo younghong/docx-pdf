@@ -3,7 +3,7 @@ name: Maven Build & FTP Deploy (docx-pdf)
 on:
   push:
     branches:
-      - main   # main 브랜치 push 시 자동 배포
+      - master   # main 브랜치 push 시 자동 배포
   # tag 배포를 원하면 아래 사용
   # tags:
   #   - "v*"
