@@ -34,7 +34,7 @@ jobs:
           port: ${{ secrets.FTP_PORT }}
           protocol: ftp
           secure: false
-          local-dir: target/
+          local-dir: ./target/
           server-dir: /deploy/docx-pdf/
           exclude: |
             **/*
