@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<jardesc>
+    <jar path="docx-pdf/docx2pdf.jar"/>
+    <options buildIfNeeded="true" compress="true" descriptionLocation="/docx-pdf/jardesc.jardesc" exportErrors="true" exportWarnings="true" includeDirectoryEntries="false" overwrite="false" saveDescription="true" storeRefactorings="false" useSourceFolders="false"/>
+    <storedRefactorings deprecationInfo="true" structuralOnly="false"/>
+    <selectedProjects/>
+    <manifest generateManifest="true" mainClassHandleIdentifier="=docx-pdf/src\/main\/java=/optional=/true=/=/maven.pomderived=/true=/&lt;com.young{App.java[App" manifestLocation="" manifestVersion="1.0" reuseManifest="false" saveManifest="false" usesManifest="true">
+        <sealing sealJar="false">
+            <packagesToSeal/>
+            <packagesToUnSeal/>
+        </sealing>
+    </manifest>
+    <selectedElements exportClassFiles="true" exportJavaFiles="false" exportOutputFolder="false">
+        <folder path="/docx-pdf/src"/>
+        <folder path="/docx-pdf/target"/>
+        <javaElement handleIdentifier="=docx-pdf/src\/main\/java=/optional=/true=/=/maven.pomderived=/true=/"/>
+        <javaElement handleIdentifier="=docx-pdf/src\/main\/resources=/maven.pomderived=/true=/=/optional=/true=/"/>
+        <javaElement handleIdentifier="=docx-pdf/src\/test\/java=/test=/true=/=/optional=/true=/=/maven.pomderived=/true=/"/>
+        <javaElement handleIdentifier="=docx-pdf/src\/test\/resources=/test=/true=/=/maven.pomderived=/true=/=/optional=/true=/"/>
+    </selectedElements>
+</jardesc>

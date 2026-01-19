@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fop version="1.0">
+  <renderers>
+    <renderer mime="application/pdf">
+      <fonts>
+        <!-- 맑은 고딕 폰트 설정 (일반) -->
+        <font kerning-on-demand="yes">
+          <font-triplet name="맑은 고딕" style="normal" weight="normal"/>
+          <font-file embed-as-subset="true">file:///C:/Windows/Fonts/malgun.ttf</font-file>
+        </font>
+        
+        <!-- 맑은 고딕 폰트 설정 (Bold) -->
+        <font kerning-on-demand="yes">
+          <font-triplet name="맑은 고딕" style="normal" weight="bold"/>
+          <font-file embed-as-subset="true">file:///C:/Windows/Fonts/malgunbd.ttf</font-file>
+        </font>
+        
+        <!-- 맑은 고딕 폰트 설정 (Italic/Semilight) -->
+        <font kerning-on-demand="yes">
+          <font-triplet name="맑은 고딕" style="italic" weight="normal"/>
+          <font-file embed-as-subset="true">file:///C:/Windows/Fonts/malgunsl.ttf</font-file>
+        </font>
+        
+        <!-- Malgun Gothic (영문명) -->
+        <font kerning-on-demand="yes">
+          <font-triplet name="Malgun Gothic" style="normal" weight="normal"/>
+          <font-file embed-as-subset="true">file:///C:/Windows/Fonts/malgun.ttf</font-file>
+        </font>
+        
+        <font kerning-on-demand="yes">
+          <font-triplet name="Malgun Gothic" style="normal" weight="bold"/>
+          <font-file embed-as-subset="true">file:///C:/Windows/Fonts/malgunbd.ttf</font-file>
+        </font>
+        
+        <!-- Arial도 맑은 고딕으로 매핑 (폐체 방지) -->
+        <font kerning-on-demand="yes">
+          <font-triplet name="Arial" style="normal" weight="normal"/>
+          <font-file embed-as-subset="true">file:///C:/Windows/Fonts/malgun.ttf</font-file>
+        </font>
+      </fonts>
+    </renderer>
+  </renderers>
+</fop>
