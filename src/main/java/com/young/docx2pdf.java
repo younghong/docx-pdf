@@ -979,7 +979,14 @@ public class docx2pdf {
 	            
 	            // 줄간격이 480 이상이면 AUTO 모드 유지
 	            if (lineValue.compareTo(BigInteger.valueOf(480)) >= 0) {
-	                spacing.setLineRule(STLineSpacingRule.AUTO);
+	                //spacing.setLineRule(STLineSpacingRule.AUTO);
+	                spacing.setLineRule(STLineSpacingRule.EXACT);
+	                
+	                
+	                //spacing.setAfter(BigInteger.valueOf(480));
+	                spacing.setAfter(spacing.getLine());
+	                spacing.setBefore(spacing.getLine());
+	                
 	                System.out.println("  - 큰 줄간격 감지: AUTO 모드로 설정");
 	            }
 	        } else {
