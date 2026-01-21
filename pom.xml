@@ -10,163 +10,137 @@
     <version>1.0-SNAPSHOT</version>
 
     <properties>
-        <maven.compiler.source>1.8</maven.compiler.source>
-        <maven.compiler.target>1.8</maven.compiler.target>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <docx4j.version>8.3.11</docx4j.version>
+        <docx4j.version>11.5.9</docx4j.version>
     </properties>
 
     <dependencies>
-	    <dependency>
-	        <groupId>org.docx4j</groupId>
-	        <artifactId>docx4j-core</artifactId>
-	        <version>${docx4j.version}</version> 
-		</dependency>
-	
-	    <dependency>
-	        <groupId>org.docx4j</groupId>
-	        <artifactId>docx4j-export-fo</artifactId>
-	        <version>${docx4j.version}</version>
-	    </dependency>
-	    
-	    <dependency>
-        	<groupId>org.docx4j</groupId>
-        	<artifactId>docx4j-JAXB-ReferenceImpl</artifactId>
-        	<version>${docx4j.version}</version>
+        <dependency>
+            <groupId>org.docx4j</groupId>
+            <artifactId>docx4j-core</artifactId>
+            <version>${docx4j.version}</version>
         </dependency>
-    	
-	
-	    <dependency>
-	        <groupId>org.apache.xmlgraphics</groupId>
-	        <artifactId>fop</artifactId>
-	        <version>2.7</version> </dependency>
-	
-	    <dependency>
-	        <groupId>jakarta.xml.bind</groupId>
-	        <artifactId>jakarta.xml.bind-api</artifactId>
-	        <version>2.3.3</version>
-	    </dependency>
-	    <dependency>
-	        <groupId>com.sun.xml.bind</groupId>
-	        <artifactId>jaxb-impl</artifactId>
-	        <version>2.3.3</version>
-	    </dependency>
-	    <dependency>
-    		<groupId>ch.qos.logback</groupId>
-    		<artifactId>logback-classic</artifactId>
-    		<version>1.2.11</version> 
-    	</dependency>
-    	
-    	
-    	<dependency>
-		    <groupId>org.apache.xmlgraphics</groupId>
-		    <artifactId>fop</artifactId>
-		    <version>2.7</version>
-		    <exclusions>
-		        <exclusion>
-		            <groupId>xml-apis</groupId>
-		            <artifactId>xml-apis</artifactId>
-		        </exclusion>
-		    </exclusions>
-		</dependency>
-    	
-    	<dependency>
-		  <groupId>org.apache.pdfbox</groupId>
-		  <artifactId>pdfbox</artifactId>
-		  <version>2.0.30</version>
-		</dependency>
 
-    	<!-- XMP 메타데이터 수정 (Acrobat이 보는 진짜 Producer) -->
-		<dependency>
-		    <groupId>org.apache.pdfbox</groupId>
-		    <artifactId>xmpbox</artifactId>
-		    <version>2.0.30</version>
-		</dependency>
-    	
-		<dependency>
-			<groupId>com.aspose</groupId>
-			<artifactId>aspose-words</artifactId>
-			<version>22.11</version>
-			<classifier>jdk17</classifier>
-		</dependency>
-		<dependency>
-			<groupId>com.aspose</groupId>
-			<artifactId>aspose-words</artifactId>
-			<version>22.11</version>
-			<classifier>javadoc</classifier>
-		</dependency>
-    	
-    	
-    	<dependency>
-	       <groupId>org.apache.poi</groupId>
-	       <artifactId>poi-ooxml</artifactId>
-	       <version>5.2.3</version>
-	   </dependency>
-    	
-    	
-    	
-    	
-    	
-		
+        <dependency>
+            <groupId>org.docx4j</groupId>
+            <artifactId>docx4j-export-fo</artifactId>
+            <version>${docx4j.version}</version>
+        </dependency>
 
+        <dependency>
+            <groupId>org.docx4j</groupId>
+            <artifactId>docx4j-JAXB-ReferenceImpl</artifactId>
+            <version>${docx4j.version}</version>
+        </dependency>
 
-    	
-    	
-	</dependencies>
-	
-	
-	<repositories>
-	    <repository>
-	        <id>aliyun</id>
-	        <url>https://maven.aliyun.com/repository/public</url>
-	    </repository>
-	    
-	    
-	    <repository>
-			<id>AsposeJavaAPI</id>
-			<name>Aspose Java API</name>
-			<url>https://releases.aspose.com/java/repo/</url>
-		</repository>
-	</repositories>
+        <dependency>
+            <groupId>org.apache.xmlgraphics</groupId>
+            <artifactId>fop</artifactId>
+            <version>2.8</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>xml-apis</groupId>
+                    <artifactId>xml-apis</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
 
-	<build>
-	    <plugins>
-	        <plugin>
-	            <groupId>org.apache.maven.plugins</groupId>
-	            <artifactId>maven-shade-plugin</artifactId>
-	            <version>3.6.0</version>  <!-- 최신 버전 권장 -->
-	            <executions>
-	                <execution>
-	                    <phase>package</phase>
-	                    <goals>
-	                        <goal>shade</goal>
-	                    </goals>
-	                    <configuration>
-		                    <createDependencyReducedPom>false</createDependencyReducedPom>
-			                <filters>
-			                    <filter>
-			                        <artifact>*:*</artifact>
-			                        <excludes>
-			                            <exclude>META-INF/*.SF</exclude>
-			                            <exclude>META-INF/*.DSA</exclude>
-			                            <exclude>META-INF/*.RSA</exclude>
-			                            <!-- 필요하면 아래도 추가 -->
-			                            <exclude>META-INF/*.EC</exclude>
-			                            <exclude>META-INF/*.dsa</exclude>
-			                            <exclude>META-INF/*.rsa</exclude>
-			                        </excludes>
-			                    </filter>
-			                </filters>
-	                        <transformers>
-	                            <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-	                                <mainClass>com.young.App</mainClass> 
-	                            </transformer>
-	                        </transformers>
-	                    </configuration>
-	                </execution>
-	            </executions>
-	        </plugin>
-	    </plugins>
-	</build>
+        <dependency>
+            <groupId>jakarta.xml.bind</groupId>
+            <artifactId>jakarta.xml.bind-api</artifactId>
+            <version>4.0.0</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.sun.xml.bind</groupId>
+            <artifactId>jaxb-impl</artifactId>
+            <version>4.0.3</version>
+        </dependency>
+
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>1.4.11</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>2.0.30</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>xmpbox</artifactId>
+            <version>2.0.30</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.aspose</groupId>
+            <artifactId>aspose-words</artifactId>
+            <version>22.11</version>
+            <classifier>jdk17</classifier>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.2.3</version>
+        </dependency>
+    </dependencies>
+
+    <repositories>
+        <repository>
+            <id>aliyun</id>
+            <url>https://maven.aliyun.com/repository/public</url>
+        </repository>
+
+        <repository>
+            <id>AsposeJavaAPI</id>
+            <name>Aspose Java API</name>
+            <url>https://releases.aspose.com/java/repo/</url>
+        </repository>
+    </repositories>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>META-INF/*.EC</exclude>
+                                        <exclude>META-INF/*.dsa</exclude>
+                                        <exclude>META-INF/*.rsa</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>com.young.App</mainClass>
+                                </transformer>
+                            </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 
 </project>

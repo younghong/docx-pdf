@@ -14,111 +14,120 @@ import org.docx4j.fonts.PhysicalFonts;
 import org.docx4j.openpackaging.packages.WordprocessingMLPackage;
 import org.docx4j.openpackaging.parts.WordprocessingML.DocumentSettingsPart;
 import org.docx4j.wml.CTSettings;
+import org.docx4j.wml.P;
+import org.docx4j.wml.PPr;
+import org.docx4j.wml.PPrBase.Spacing;
+import org.docx4j.wml.STLineSpacingRule;
 import org.docx4j.wml.STTblLayoutType;
 import org.docx4j.wml.TcPrInner.GridSpan;
 
-
-
-
-
+import jakarta.xml.bind.JAXBElement;
 
 import java.io.ByteArrayOutputStream;
-import java.io.File;
-
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDDocumentInformation;
 import org.apache.pdfbox.pdmodel.common.PDMetadata;
-
 import org.apache.xmpbox.XMPMetadata;
 import org.apache.xmpbox.schema.DublinCoreSchema;
 import org.apache.xmpbox.schema.XMPBasicSchema;
-
 import org.apache.xmpbox.xml.XmpSerializer;
-
-
 
 public class docx2pdf {
 
-	
 	/**
-	 * docx를 pdf로 변환하는 함수.
-	 * @param inputPath 입력 파일
-	 * @param outputPath 출력 파일
-	 * @param xconfPath 한글 설정 파일
-	 * @author 김영홍
+	 * docxを pdfに変換する関数.
+	 * @param inputPath 入力ファイル
+	 * @param outputPath 出力ファイル
+	 * @param xconfPath ハングル設定ファイル
+	 * @author 김영화
 	 */
 	public File toPDF(String inputPath, String outputPath , String xconfPath)
 	{
-		System.out.println("자동 배포 TEST");
-		
 		File newFile = null;
 		
 		OutputStream os = null;
         try {
-            // 1. FOP 설정 파일 경로 설정 (매우 중요!)
+            // 1. FOP設定ファイルパスを設定 (非常に重要!)
             if (new File(xconfPath).exists()) {
                 System.setProperty("org.apache.fop.configuration", xconfPath);
-                System.out.println("✓ FOP 설정 파일 적용");
+                System.out.println("✓ FOP設定ファイルが適用されました");
             } else {
-                System.out.println("⚠ FOP 설정 파일을 찾을 수 없습니다: " + xconfPath);
-                System.out.println("  아래의 fop.xconf 파일을 생성해주세요.");
+                System.out.println("⚠  FOP設定ファイルが見つかりません: " + xconfPath);
+                System.out.println("  以下のfop.xconfファイルを作成してください.");
             }
 
-            // 2. 시스템 폰트 자동 탐색
-            System.out.println("📝 시스템 폰트 탐색 중...");
-            PhysicalFonts.discoverPhysicalFonts();
-            System.out.println("✓ 시스템 폰트 탐색 완료");
-
-            // 3. WordprocessingMLPackage 로드
-            System.out.println("📖 DOCX 파일 로드 중...");
-            WordprocessingMLPackage wordMLPackage = Docx4J.load(new File(inputPath));
-            System.out.println("✓ DOCX 파일 로드 완료");
-
+         // [추가: FOP 설정 초기화]
+            initializeFopConfiguration();
             
+            
+            // 2. システムフォント自動検索
+            System.out.println("🔍 システムフォント検索中...");
+            PhysicalFonts.discoverPhysicalFonts();
+            System.out.println("✓ システムフォント検索完了");
+
+            // 3. WordprocessingMLPackageをロード
+            System.out.println("📄 DOCXファイルロード中...");
+            WordprocessingMLPackage wordMLPackage = Docx4J.load(new File(inputPath));
+            System.out.println("✓ DOCXファイルロード完了");
+
+            System.setProperty("docx4j.convert.out.pdf.viaXSLFO.lineHeightFix", "true");
+
             removeAndFixDuplicateIds(wordMLPackage);
             
+            // 変換前にすべての段落のline spacingをexactly pt値に変える
+//            for (Object o : wordMLPackage.getMainDocumentPart().getJAXBNodesViaXPath("//w:p", true)) {
+//                P p = (P)o;
+//                PPr pPr = p.getPPr();
+//                if (pPr == null) {
+//                    pPr = new PPr();
+//                    p.setPPr(pPr);
+//                }
+//                Spacing spacing = pPr.getSpacing();
+//                if (spacing == null) {
+//                    spacing = new Spacing();
+//                    pPr.setSpacing(spacing);
+//                }
+//                // 例: 240 = 12pt exactly
+//                spacing.setLineRule(STLineSpacingRule.EXACT);
+//                spacing.setLine(BigInteger.valueOf(480));  // 希望するpt × 20
+//            }
+            
+            preserveLineSpacingAndEmptyParagraphs(wordMLPackage);
             
             
-            // 4. fontTable.xml이 없을 경우 기본 폰트 설정
-            // fontTable.xml에 폰트가 정의되지 않은 경우, 맑은 고딕을 기본 폰트로 사용
-            addDefaultFontToDocx(wordMLPackage);
-            System.out.println("✓ 기본 폰트(맑은 고딕) 설정 완료");
             
-            
-            // 4-1. 테이블 너비 자동 조정 (페이지 영역 초과 방지)
-            adjustTableWidth(wordMLPackage);
-            System.out.println("✓ 테이블 너비 조정 완료");
+         // 위치: Docx4J.toPDF(wordMLPackage, os); 호출 직전
 
-            // 5. 폰트 매퍼 설정
-            Mapper fontMapper = new IdentityPlusMapper();
-            wordMLPackage.setFontMapper(fontMapper);
-            System.out.println("✓ 폰트 매퍼 설정 완료");
-            System.out.println("✓ 폰트 매퍼 설정 완료");
+         // [추가 코드 시작]
+         applyLineSpacingToAllParagraphs(wordMLPackage);
+         // [추가 코드 끝]
+            
 
-            // 5. 출력 스트림 설정
+            // 5. フォントマッパー設定
+            System.out.println("✓ フォントマッパー設定完了");
+            System.out.println("✓ フォントマッパー設定完了");
+
+            // 5. 出力ストリーム設定
             newFile=new File(outputPath);
             os = new FileOutputStream(newFile);
 
-            // 6. DOCX를 PDF로 변환
-            System.out.println("🔄 PDF로 변환 중...");
+            // 6. DOCXをPDFに変換
+            System.out.println("📄 PDFに変換中...");
             Docx4J.toPDF(wordMLPackage, os);
 
-            
-            
             rewritePdfMetadata(newFile);
             
-            
-            System.out.println("\n✅ DOCX 파일이 PDF로 성공적으로 변환되었습니다.");
-            System.out.println("📄 생성된 파일: " + outputPath);
+            System.out.println("\n✅ DOCXファイルがPDFに正常に変換されました.");
+            System.out.println("📄 生成されたファイル: " + outputPath);
 
         } catch (Exception e) {
             e.printStackTrace();
-            System.err.println("\n❌ 변환 중 오류 발생: " + e.getMessage());
-            System.err.println("\n✓ 해결 방법:");
-            System.err.println("  1. fop.xconf 파일을 설정했는지 확인");
-            System.err.println("  2. 폰트 파일 경로가 올바른지 확인");
-            System.err.println("  3. docx4j 버전을 최신으로 업데이트");
-            System.err.println("  4. Maven 의존성 확인: docx4j-core, docx4j-export-fo");
+            System.err.println("\n❌ 変換中にエラーが発生しました: " + e.getMessage());
+            System.err.println("\n✓ 解決方法:");
+            System.err.println("  1. fop.xconfファイルを設定したか確認");
+            System.err.println("  2. フォントファイルパスが正しいか確認");
+            System.err.println("  3. docx4jバージョンを最新にアップデート");
+            System.err.println("  4. Maven依存性確認: docx4j-core, docx4j-export-fo");
         } finally {
             if (os != null) {
                 try {
@@ -131,8 +140,6 @@ public class docx2pdf {
         return newFile;
 	}
 	
-	
-	// 아래는 새로운 메서드 - 클래스에 추가
 	private void fixAllBorderValues(WordprocessingMLPackage wordMLPackage) {
 	    try {
 	        org.docx4j.wml.Document doc = wordMLPackage.getMainDocumentPart().getContents();
@@ -140,7 +147,7 @@ public class docx2pdf {
 	            fixAllBorderValuesRecursive(doc.getBody());
 	        }
 	    } catch (Exception e) {
-	        System.out.println("⚠ 테두리 값 수정 중 오류: " + e.getMessage());
+	        System.out.println("⚠  テーダリー値更新中のエラー: " + e.getMessage());
 	        e.printStackTrace();
 	    }
 	}
@@ -148,7 +155,6 @@ public class docx2pdf {
 	private void fixAllBorderValuesRecursive(Object obj) {
 	    if (obj == null) return;
 
-	    // Body
 	    if (obj instanceof org.docx4j.wml.Body) {
 	        org.docx4j.wml.Body body = (org.docx4j.wml.Body) obj;
 	        for (Object child : body.getContent()) {
@@ -157,20 +163,17 @@ public class docx2pdf {
 	        return;
 	    }
 
-	    // JAXBElement 처리
-	    if (obj instanceof javax.xml.bind.JAXBElement) {
-	        javax.xml.bind.JAXBElement jaxbElement = (javax.xml.bind.JAXBElement) obj;
+	    if (obj instanceof JAXBElement) {
+	        JAXBElement jaxbElement = (JAXBElement) obj;
 	        fixAllBorderValuesRecursive(jaxbElement.getValue());
 	        return;
 	    }
 
-	    // Paragraph 처리
 	    if (obj instanceof org.docx4j.wml.P) {
 	        org.docx4j.wml.P p = (org.docx4j.wml.P) obj;
 	        org.docx4j.wml.PPr pPr = p.getPPr();
 	        
 	        if (pPr != null) {
-	            // 문단 테두리 처리 - reflection 사용
 	            fixParagraphBorderValues(pPr);
 	        }
 	        
@@ -180,13 +183,11 @@ public class docx2pdf {
 	        return;
 	    }
 
-	    // Table 처리
 	    if (obj instanceof org.docx4j.wml.Tbl) {
 	        org.docx4j.wml.Tbl tbl = (org.docx4j.wml.Tbl) obj;
 	        org.docx4j.wml.TblPr tblPr = tbl.getTblPr();
 	        
 	        if (tblPr != null) {
-	            // 테이블 테두리 처리
 	            org.docx4j.wml.TblBorders tblBorders = tblPr.getTblBorders();
 	            if (tblBorders != null) {
 	                fixBorderVal(tblBorders.getTop());
@@ -198,13 +199,12 @@ public class docx2pdf {
 	            }
 	        }
 	        
-	        // 테이블 행과 셀 처리
 	        for (Object child : tbl.getContent()) {
 	            if (child instanceof org.docx4j.wml.Tr) {
 	                org.docx4j.wml.Tr tr = (org.docx4j.wml.Tr) child;
 	                for (Object trChild : tr.getContent()) {
-	                    if (trChild instanceof javax.xml.bind.JAXBElement) {
-	                        javax.xml.bind.JAXBElement jaxbEl = (javax.xml.bind.JAXBElement) trChild;
+	                    if (trChild instanceof JAXBElement) {
+	                        JAXBElement jaxbEl = (JAXBElement) trChild;
 	                        Object tcObj = jaxbEl.getValue();
 	                        
 	                        if (tcObj instanceof org.docx4j.wml.Tc) {
@@ -215,7 +215,6 @@ public class docx2pdf {
 	                                fixCellBorderValues(tcPr);
 	                            }
 	                            
-	                            // 셀 내의 컨텐츠도 처리
 	                            for (Object tcChild : tc.getContent()) {
 	                                fixAllBorderValuesRecursive(tcChild);
 	                            }
@@ -225,14 +224,12 @@ public class docx2pdf {
 	            }
 	        }
 	        
-	        // 재귀적으로 테이블 내용 처리
 	        for (Object child : tbl.getContent()) {
 	            fixAllBorderValuesRecursive(child);
 	        }
 	        return;
 	    }
 
-	    // Run 처리
 	    if (obj instanceof org.docx4j.wml.R) {
 	        org.docx4j.wml.R r = (org.docx4j.wml.R) obj;
 	        for (Object child : r.getContent()) {
@@ -242,21 +239,18 @@ public class docx2pdf {
 	    }
 	}
 
-	// 테두리 val 속성 확인 및 설정
 	private void fixBorderVal(org.docx4j.wml.CTBorder border) {
 	    if (border != null) {
 	        try {
 	            if (border.getVal() == null) {
-	                // val이 없으면 "single"로 기본값 설정
 	                border.setVal(org.docx4j.wml.STBorder.SINGLE);
 	            }
 	        } catch (Exception e) {
-	            // 예외 무시
+	            // 例外無視
 	        }
 	    }
 	}
 
-	// 문단 테두리 처리 - reflection 사용
 	private void fixParagraphBorderValues(org.docx4j.wml.PPr pPr) {
 	    try {
 	        java.lang.reflect.Field[] fields = pPr.getClass().getDeclaredFields();
@@ -265,7 +259,6 @@ public class docx2pdf {
 	            field.setAccessible(true);
 	            Object fieldValue = field.get(pPr);
 	            
-	            // CTBorder 타입 확인
 	            if (fieldValue instanceof org.docx4j.wml.CTBorder) {
 	                org.docx4j.wml.CTBorder border = (org.docx4j.wml.CTBorder) fieldValue;
 	                if (border.getVal() == null) {
@@ -274,21 +267,18 @@ public class docx2pdf {
 	            }
 	        }
 	    } catch (Exception e) {
-	        // 예외 무시
+	        // 例外無視
 	    }
 	}
 
-	// 셀 테두리 처리
 	private void fixCellBorderValues(org.docx4j.wml.TcPr tcPr) {
 	    try {
-	        // reflection을 사용하여 TcPr의 모든 필드 확인
 	        java.lang.reflect.Field[] fields = tcPr.getClass().getDeclaredFields();
 	        
 	        for (java.lang.reflect.Field field : fields) {
 	            field.setAccessible(true);
 	            Object fieldValue = field.get(tcPr);
 	            
-	            // CTBorder 타입 확인
 	            if (fieldValue instanceof org.docx4j.wml.CTBorder) {
 	                org.docx4j.wml.CTBorder border = (org.docx4j.wml.CTBorder) fieldValue;
 	                if (border.getVal() == null) {
@@ -297,13 +287,11 @@ public class docx2pdf {
 	            }
 	        }
 	    } catch (Exception e) {
-	        // 예외 무시
+	        // 例外無視
 	    }
 	}
 	
-	
 	private void rewritePdfMetadata(File pdfFile) throws Exception {
-
 	    PDDocument doc = PDDocument.load(pdfFile);
 
 	    // 1. Info Dictionary
@@ -334,728 +322,709 @@ public class docx2pdf {
 	    doc.close();
 	}
 	
+	private void addDefaultFontToDocx(WordprocessingMLPackage wordMLPackage) {
+	    try {
+	        org.docx4j.wml.Document doc = wordMLPackage.getMainDocumentPart().getContents();
+	        DocumentSettingsPart settingsPart = wordMLPackage.getMainDocumentPart().getDocumentSettingsPart();
+	        
+	        if (settingsPart == null) {
+	            settingsPart = new org.docx4j.openpackaging.parts.WordprocessingML.DocumentSettingsPart();
+	            wordMLPackage.getMainDocumentPart().addTargetPart(settingsPart);
+	        }
+	        
+	        CTSettings settings = settingsPart.getContents();
+	        if (settings == null) {
+	            settings = new CTSettings();
+	            settingsPart.setContents(settings);
+	        }
+	        
+	        org.docx4j.wml.ObjectFactory factory = new org.docx4j.wml.ObjectFactory();
+	        org.docx4j.wml.RFonts rFonts = factory.createRFonts();
+	        rFonts.setAscii("맑은 고딕");
+	        rFonts.setHAnsi("맑은 고딕");
+	        rFonts.setCs("맑은 고딕");
+	        
+	        applyDefaultFontToAllElements(doc, rFonts);
+	        
+	//        preserveLineSpacingAndEmptyParagraphs(wordMLPackage);
+	        System.out.println("✓ 行間と空段落の保存完了");
+	        
+	    } catch (Exception e) {
+	        System.out.println("⚠  デフォルトフォント設定中のエラー: " + e.getMessage());
+	    }
+	}
+
+	private static final float A4_WIDTH_PX = 794f;
+	private static final float A4_PADDING_PX = 76f;
+	
+	public static int mmToPx(double mm, double dpi) {
+	    return (int) Math.round(mm * dpi / 25.4);
+	}
+	
+	private static float dxaToPx(int dxa) {
+	    return dxa * 96f / 1440f;
+	}
+	
+	public static int pxToDxa(int px) {
+	    return Math.round(px * 1440f / 96f);
+	}
+
+	public static int[] scaleToA4Px(int[] dxaArray) {
+	    float[] pxArray = new float[dxaArray.length];
+	    float totalPx = 0f;
+
+	    for (int i = 0; i < dxaArray.length; i++) {
+	        pxArray[i] = dxaToPx(dxaArray[i]);
+	        totalPx += pxArray[i];
+	    }
+
+	    float scale = (A4_WIDTH_PX-(A4_PADDING_PX*2)) / totalPx;
+
+	    int[] result = new int[dxaArray.length];
+	    for (int i = 0; i < pxArray.length; i++) {
+	        result[i] = pxToDxa(Math.round(pxArray[i] * scale));
+	    }
+
+	    return result;
+	}
+	
+	private void adjustTableWidth(WordprocessingMLPackage wordMLPackage) {
+	    try {
+	        org.docx4j.wml.Document doc = wordMLPackage.getMainDocumentPart().getContents();
+	        org.docx4j.wml.Body body = doc.getBody();
+	        
+	        if (body != null) {
+	            for (Object bodyChild : body.getContent()) {
+	                if (bodyChild instanceof JAXBElement) {
+	                    JAXBElement jaxbElement = (JAXBElement)bodyChild;
+	                    Object tbltest = jaxbElement.getValue();
+	                    
+	                    if (tbltest instanceof org.docx4j.wml.Tbl) {
+	                        org.docx4j.wml.Tbl tbl = (org.docx4j.wml.Tbl) tbltest;
+	                        
+	                        int maxColCount = 0;
+	                        for (Object tblChild : tbl.getContent()) {
+	                            if (tblChild instanceof org.docx4j.wml.Tr) {
+	                                org.docx4j.wml.Tr tr = (org.docx4j.wml.Tr) tblChild;
+	                                int colCount = calculateActualColumnCount(tr);
+	                                maxColCount = Math.max(maxColCount, colCount);
+	                            }
+	                        }
+	                        
+	                        org.docx4j.wml.TblGrid tblGrid = tbl.getTblGrid();
+	                        if (tblGrid == null) {
+	                            tblGrid = new org.docx4j.wml.TblGrid();
+	                            tbl.setTblGrid(tblGrid);
+	                        }
+	                        
+	                        java.util.List<org.docx4j.wml.TblGridCol> gridCols = tblGrid.getGridCol();
+	                        
+	                        while (gridCols.size() < maxColCount) {
+	                            org.docx4j.wml.TblGridCol col = new org.docx4j.wml.TblGridCol();
+	                            col.setW(java.math.BigInteger.valueOf(1440));
+	                            gridCols.add(col);
+	                        }
+	                        
+	                        for (Object tblChild : tbl.getContent()) {
+	                            if (tblChild instanceof org.docx4j.wml.Tr) {
+	                                org.docx4j.wml.Tr tr = (org.docx4j.wml.Tr) tblChild;
+	                                removeExcessCells(tr, maxColCount);
+	                            }
+	                        }
+	                        
+	                        int[] dxaArray = new int[gridCols.size()];
+	                        for (int i = 0; i < gridCols.size(); i++) {
+	                            org.docx4j.wml.TblGridCol col = gridCols.get(i);
+	                            java.math.BigInteger w = col.getW();
+	                            dxaArray[i] = (w != null) ? w.intValue() : 1440;
+	                        }
+	                        
+	                        int[] dxaArrayResult = scaleToA4Px(dxaArray);
+	                        for (int i = 0; i < gridCols.size(); i++) {
+	                            gridCols.get(i).setW(java.math.BigInteger.valueOf(dxaArrayResult[i]));
+	                        }
+	                        
+	                        org.docx4j.wml.TblPr tblPr = tbl.getTblPr();
+	                        if (tblPr == null) {
+	                            tblPr = new org.docx4j.wml.TblPr();
+	                            tbl.setTblPr(tblPr);
+	                        }
+	                        
+	                        org.docx4j.wml.TblWidth tblW = new org.docx4j.wml.TblWidth();
+	                        tblW.setW(java.math.BigInteger.valueOf(5000));
+	                        tblW.setType("pct");
+	                        tblPr.setTblW(tblW);
+	                        
+	                        org.docx4j.wml.CTTblLayoutType tblLayout = new org.docx4j.wml.CTTblLayoutType();
+	                        tblLayout.setType(org.docx4j.wml.STTblLayoutType.AUTOFIT);
+	                        tblPr.setTblLayout(tblLayout);
+	                    }
+	                }
+	            }
+	        }
+	    } catch (Exception e) {
+	        System.out.println("⚠  テーダル幅調整中のエラー: " + e.getMessage());
+	        e.printStackTrace();
+	    }
+	}
+
+	private int calculateActualColumnCount(org.docx4j.wml.Tr tr) {
+	    int colCount = 0;
+	    for (Object trChild : tr.getContent()) {
+	        if (trChild instanceof JAXBElement) {
+	            JAXBElement jaxbElementTc = (JAXBElement)trChild;
+	            Object tCtest = jaxbElementTc.getValue();
+	            if (tCtest instanceof org.docx4j.wml.Tc) {
+	                org.docx4j.wml.Tc tc = (org.docx4j.wml.Tc) tCtest;
+	                org.docx4j.wml.TcPr tcPr = tc.getTcPr();
+	                
+	                int gridSpan = 1;
+	                if (tcPr != null && tcPr.getGridSpan() != null) {
+	                    gridSpan = tcPr.getGridSpan().getVal().intValue();
+	                }
+	                colCount += gridSpan;
+	            }
+	        }
+	    }
+	    return colCount;
+	}
+
+	private void removeExcessCells(org.docx4j.wml.Tr tr, int maxColCount) {
+	    int currentColIndex = 0;
+	    java.util.List<Object> cellsToRemove = new java.util.ArrayList<>();
+	    
+	    for (Object trChild : tr.getContent()) {
+	        if (trChild instanceof JAXBElement) {
+	            JAXBElement jaxbElementTc = (JAXBElement)trChild;
+	            Object tCtest = jaxbElementTc.getValue();
+	            if (tCtest instanceof org.docx4j.wml.Tc) {
+	                org.docx4j.wml.Tc tc = (org.docx4j.wml.Tc) tCtest;
+	                org.docx4j.wml.TcPr tcPr = tc.getTcPr();
+	                
+	                int gridSpan = 1;
+	                if (tcPr != null && tcPr.getGridSpan() != null) {
+	                    gridSpan = tcPr.getGridSpan().getVal().intValue();
+	                }
+	                
+	                if (currentColIndex >= maxColCount) {
+	                    cellsToRemove.add(trChild);
+	                } else if (currentColIndex + gridSpan > maxColCount) {
+	                    if (tcPr == null) {
+	                        tcPr = new org.docx4j.wml.TcPr();
+	                        tc.setTcPr(tcPr);
+	                    }
+	                    int newGridSpan = maxColCount - currentColIndex;
+	                    
+	                    GridSpan gs = new GridSpan();
+	                    gs.setVal(java.math.BigInteger.valueOf(newGridSpan));
+	                    tcPr.setGridSpan(gs);
+	                    
+	                    currentColIndex = maxColCount;
+	                } else {
+	                    currentColIndex += gridSpan;
+	                }
+	            }
+	        }
+	    }
+	    
+	    for (Object cellToRemove : cellsToRemove) {
+	        tr.getContent().remove(cellToRemove);
+	    }
+	}
+
+	private void applyDefaultFontToAllElements(Object obj, org.docx4j.wml.RFonts defaultFont) {
+	    if (obj == null) return;
+	    
+	    if (obj instanceof org.docx4j.wml.Document) {
+	        org.docx4j.wml.Document doc = (org.docx4j.wml.Document) obj;
+	        org.docx4j.wml.Body body = doc.getBody();
+	        if (body != null) {
+	            applyDefaultFontToAllElements(body, defaultFont);
+	        }
+	        return;
+	    }
+	    
+	    if (obj instanceof org.docx4j.wml.Body) {
+	        org.docx4j.wml.Body body = (org.docx4j.wml.Body) obj;
+	        for (Object bodyChild : body.getContent()) {
+	            applyDefaultFontToAllElements(bodyChild, defaultFont);
+	        }
+	        return;
+	    }
+	    
+	    if (obj instanceof org.docx4j.wml.P) {
+	        org.docx4j.wml.P p = (org.docx4j.wml.P) obj;
+	        java.util.List<Object> pContent = p.getContent();
+	        for (Object pChild : pContent) {
+	            applyDefaultFontToAllElements(pChild, defaultFont);
+	        }
+	        return;
+	    }
+	    
+	    if (obj instanceof org.docx4j.wml.Tbl) {
+	        org.docx4j.wml.Tbl tbl = (org.docx4j.wml.Tbl) obj;
+	        for (Object tblChild : tbl.getContent()) {
+	            applyDefaultFontToAllElements(tblChild, defaultFont);
+	        }
+	        return;
+	    }
+	    
+	    if (obj instanceof org.docx4j.wml.Tr) {
+	        org.docx4j.wml.Tr tr = (org.docx4j.wml.Tr) obj;
+	        for (Object trChild : tr.getContent()) {
+	            applyDefaultFontToAllElements(trChild, defaultFont);
+	        }
+	        return;
+	    }
+	    
+	    if (obj instanceof org.docx4j.wml.Tc) {
+	        org.docx4j.wml.Tc tc = (org.docx4j.wml.Tc) obj;
+	        for (Object tcChild : tc.getContent()) {
+	            applyDefaultFontToAllElements(tcChild, defaultFont);
+	        }
+	        return;
+	    }
+	    
+	    if (obj instanceof JAXBElement) {
+	        JAXBElement jaxbElement = (JAXBElement)obj;
+	        Object tbltest=jaxbElement.getValue();
+	        applyDefaultFontToAllElements(tbltest, defaultFont);
+	        return;
+	    }
+	    
+	    if (obj instanceof org.docx4j.wml.R) {
+	        org.docx4j.wml.R r = (org.docx4j.wml.R) obj;
+	        org.docx4j.wml.RPr rPr = r.getRPr();
+	        if (rPr == null) {
+	            rPr = new org.docx4j.wml.RPr();
+	            r.setRPr(rPr);
+	        }
+	        org.docx4j.wml.RFonts rFonts = rPr.getRFonts();
+	        if (rFonts == null || (rFonts.getAscii() == null && rFonts.getHAnsi() == null)) {
+	            if (rFonts == null) {
+	                rFonts = new org.docx4j.wml.RFonts();
+	            }
+	            rFonts.setAscii("맑은 고딕");
+	            rFonts.setHAnsi("맑은 고딕");
+	            rFonts.setCs("맑은 고딕");
+	            rPr.setRFonts(rFonts);
+	        } else if(rFonts.getHAnsi() != null && rFonts.getHAnsi().equals("Times New Roman")) {
+	            rFonts.setAscii("맑은 고딕");
+	            rFonts.setHAnsi("맑은 고딕");
+	            rFonts.setCs("맑은 고딕");
+	            rPr.setRFonts(rFonts);
+	        }
+	        return;
+	    }
+
+
+	}
 	
 	
 	
 	
-	
-	
-	
-	
-	
-	// fontTable.xml이 없을 경우 기본 폰트를 설정하는 메서드
-    private void addDefaultFontToDocx(WordprocessingMLPackage wordMLPackage) {
-        try {
-            org.docx4j.wml.Document doc = wordMLPackage.getMainDocumentPart().getContents();
-            DocumentSettingsPart settingsPart = wordMLPackage.getMainDocumentPart().getDocumentSettingsPart();
-            
-            if (settingsPart == null) {
-                // DocumentSettingsPart가 없으면 생성
-                settingsPart = new org.docx4j.openpackaging.parts.WordprocessingML.DocumentSettingsPart();
-                wordMLPackage.getMainDocumentPart().addTargetPart(settingsPart);
-            }
-            
-            // 기본 폰트를 맑은 고딕으로 설정
-            CTSettings settings = settingsPart.getContents();
-            if (settings == null) {
-                settings = new CTSettings();
-                settingsPart.setContents(settings);
-            }
-            
-            // ThemeFontScheme 설정 (기본 폰트 지정)
-            org.docx4j.wml.ObjectFactory factory = new org.docx4j.wml.ObjectFactory();
-            org.docx4j.wml.RFonts rFonts = factory.createRFonts();
-            rFonts.setAscii("맑은 고딕");
-            rFonts.setHAnsi("맑은 고딕");
-            rFonts.setCs("맑은 고딕");
-            
-            // 모든 문단과 텍스트에 기본 폰트 적용
-            applyDefaultFontToAllElements(doc, rFonts);
-            
-        } catch (Exception e) {
-            System.out.println("⚠ 기본 폰트 설정 중 오류: " + e.getMessage());
-        }
-    }
-
-    private static final float A4_WIDTH_PX = 794f; // 96dpi 기준 A4 가로
-    private static final float A4_PADDING_PX = 76f;
-    
-    
- // mm → px
-    public static int mmToPx(double mm, double dpi) {
-        return (int) Math.round(mm * dpi / 25.4);
-    }
-    
-    
-    // DXA → PX
-    private static float dxaToPx(int dxa) {
-        return dxa * 96f / 1440f;
-    }
-    
-    public static int pxToDxa(int px) {
-        return Math.round(px * 1440f / 96f);
-    }
-
-    // DXA 배열을 A4 가로폭에 맞게 px로 비율 축소
-    public static int[] scaleToA4Px(int[] dxaArray) {
-        float[] pxArray = new float[dxaArray.length];
-        float totalPx = 0f;
-
-        // 1. DXA → PX 변환
-        for (int i = 0; i < dxaArray.length; i++) {
-            pxArray[i] = dxaToPx(dxaArray[i]);
-            totalPx += pxArray[i];
-        }
-
-        // 2. A4에 맞는 스케일 비율
-        float scale = (A4_WIDTH_PX-(A4_PADDING_PX*2)) / totalPx;
-
-        // 3. 비율 적용
-        int[] result = new int[dxaArray.length];
-        for (int i = 0; i < pxArray.length; i++) {
-            result[i] = pxToDxa(Math.round(pxArray[i] * scale));
-        }
-
-        return result;
-    }
-    
-    private void adjustTableWidth(WordprocessingMLPackage wordMLPackage) {
-        try {
-            org.docx4j.wml.Document doc = wordMLPackage.getMainDocumentPart().getContents();
-            org.docx4j.wml.Body body = doc.getBody();
-            
-            if (body != null) {
-                for (Object bodyChild : body.getContent()) {
-                    if (bodyChild instanceof javax.xml.bind.JAXBElement) {
-                        javax.xml.bind.JAXBElement jaxbElement = (javax.xml.bind.JAXBElement)bodyChild;
-                        Object tbltest = jaxbElement.getValue();
-                        
-                        if (tbltest instanceof org.docx4j.wml.Tbl) {
-                            org.docx4j.wml.Tbl tbl = (org.docx4j.wml.Tbl) tbltest;
-                            
-                            // 1. 각 행의 실제 열 개수 계산 (gridSpan 포함)
-                            int maxColCount = 0;
-                            for (Object tblChild : tbl.getContent()) {
-                                if (tblChild instanceof org.docx4j.wml.Tr) {
-                                    org.docx4j.wml.Tr tr = (org.docx4j.wml.Tr) tblChild;
-                                    int colCount = calculateActualColumnCount(tr);
-                                    maxColCount = Math.max(maxColCount, colCount);
-                                }
-                            }
-                            
-                            // 2. TblGrid 수정 또는 생성
-                            org.docx4j.wml.TblGrid tblGrid = tbl.getTblGrid();
-                            if (tblGrid == null) {
-                                tblGrid = new org.docx4j.wml.TblGrid();
-                                tbl.setTblGrid(tblGrid);
-                            }
-                            
-                            java.util.List<org.docx4j.wml.TblGridCol> gridCols = tblGrid.getGridCol();
-                            
-                            // gridCol 개수를 maxColCount에 맞추기
-                            while (gridCols.size() < maxColCount) {
-                                org.docx4j.wml.TblGridCol col = new org.docx4j.wml.TblGridCol();
-                                col.setW(java.math.BigInteger.valueOf(1440));
-                                gridCols.add(col);
-                            }
-                            
-                            // 3. 각 행의 초과 셀 제거
-                            for (Object tblChild : tbl.getContent()) {
-                                if (tblChild instanceof org.docx4j.wml.Tr) {
-                                    org.docx4j.wml.Tr tr = (org.docx4j.wml.Tr) tblChild;
-                                    removeExcessCells(tr, maxColCount);
-                                }
-                            }
-                            
-                            // 4. TblGrid 크기 조정
-                            int[] dxaArray = new int[gridCols.size()];
-                            for (int i = 0; i < gridCols.size(); i++) {
-                                org.docx4j.wml.TblGridCol col = gridCols.get(i);
-                                java.math.BigInteger w = col.getW();
-                                dxaArray[i] = (w != null) ? w.intValue() : 1440;
-                            }
-                            
-                            int[] dxaArrayResult = scaleToA4Px(dxaArray);
-                            for (int i = 0; i < gridCols.size(); i++) {
-                                gridCols.get(i).setW(java.math.BigInteger.valueOf(dxaArrayResult[i]));
-                            }
-                            
-                            // 5. 테이블 속성 설정
-                            org.docx4j.wml.TblPr tblPr = tbl.getTblPr();
-                            if (tblPr == null) {
-                                tblPr = new org.docx4j.wml.TblPr();
-                                tbl.setTblPr(tblPr);
-                            }
-                            
-                            org.docx4j.wml.TblWidth tblW = new org.docx4j.wml.TblWidth();
-                            tblW.setW(java.math.BigInteger.valueOf(5000));
-                            tblW.setType("pct");
-                            tblPr.setTblW(tblW);
-                            
-                            org.docx4j.wml.CTTblLayoutType tblLayout = new org.docx4j.wml.CTTblLayoutType();
-                            tblLayout.setType(org.docx4j.wml.STTblLayoutType.AUTOFIT);
-                            tblPr.setTblLayout(tblLayout);
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            System.out.println("⚠ 테이블 너비 조정 중 오류: " + e.getMessage());
-            e.printStackTrace();
-        }
-    }
-
-    // gridSpan을 고려한 실제 열 개수 계산
-    private int calculateActualColumnCount(org.docx4j.wml.Tr tr) {
-        int colCount = 0;
-        for (Object trChild : tr.getContent()) {
-            if (trChild instanceof javax.xml.bind.JAXBElement) {
-                javax.xml.bind.JAXBElement jaxbElementTc = (javax.xml.bind.JAXBElement)trChild;
-                Object tCtest = jaxbElementTc.getValue();
-                if (tCtest instanceof org.docx4j.wml.Tc) {
-                    org.docx4j.wml.Tc tc = (org.docx4j.wml.Tc) tCtest;
-                    org.docx4j.wml.TcPr tcPr = tc.getTcPr();
-                    
-                    int gridSpan = 1;
-                    if (tcPr != null && tcPr.getGridSpan() != null) {
-                        gridSpan = tcPr.getGridSpan().getVal().intValue();
-                        
-                    }
-                    colCount += gridSpan;
-                }
-            }
-        }
-        return colCount;
-    }
-
-    // 초과 셀 제거 (gridSpan 고려)
-    private void removeExcessCells(org.docx4j.wml.Tr tr, int maxColCount) {
-        int currentColIndex = 0;
-        java.util.List<Object> cellsToRemove = new java.util.ArrayList<>();
-        
-        for (Object trChild : tr.getContent()) {
-            if (trChild instanceof javax.xml.bind.JAXBElement) {
-                javax.xml.bind.JAXBElement jaxbElementTc = (javax.xml.bind.JAXBElement)trChild;
-                Object tCtest = jaxbElementTc.getValue();
-                if (tCtest instanceof org.docx4j.wml.Tc) {
-                    org.docx4j.wml.Tc tc = (org.docx4j.wml.Tc) tCtest;
-                    org.docx4j.wml.TcPr tcPr = tc.getTcPr();
-                    
-                    int gridSpan = 1;
-                    if (tcPr != null && tcPr.getGridSpan() != null) {
-                        gridSpan = tcPr.getGridSpan().getVal().intValue();
-                    }
-                    
-                    // gridSpan을 maxColCount를 초과하지 않도록 조정
-                    if (currentColIndex >= maxColCount) {
-                        cellsToRemove.add(trChild);
-                    } else if (currentColIndex + gridSpan > maxColCount) {
-                        // gridSpan 줄이기
-                        if (tcPr == null) {
-                            tcPr = new org.docx4j.wml.TcPr();
-                            tc.setTcPr(tcPr);
-                        }
-                        int newGridSpan = maxColCount - currentColIndex;
-                        
-                        GridSpan gs = new  GridSpan();
-                        gs.setVal(java.math.BigInteger.valueOf(newGridSpan));
-                        tcPr.setGridSpan(gs);
-                        
-                        
-                        currentColIndex = maxColCount;
-                    } else {
-                        currentColIndex += gridSpan;
-                    }
-                }
-            }
-        }
-        
-        // 초과 셀 제거
-        for (Object cellToRemove : cellsToRemove) {
-            tr.getContent().remove(cellToRemove);
-        }
-    }
-    private void adjustTableWidth2(WordprocessingMLPackage wordMLPackage) {
-        try {
-            org.docx4j.wml.Document doc = wordMLPackage.getMainDocumentPart().getContents();
-            org.docx4j.wml.Body body = doc.getBody();
-            
-            if (body != null) {
-                for (Object bodyChild : body.getContent()) {
-                	
-                	
-                    if (bodyChild instanceof javax.xml.bind.JAXBElement) {
-                    	javax.xml.bind.JAXBElement jaxbElement = (javax.xml.bind.JAXBElement)bodyChild;
-                    	Object tbltest=jaxbElement.getValue();
-                    	
-                    	 if (tbltest instanceof org.docx4j.wml.Tbl) {
-                             org.docx4j.wml.Tbl tbl = (org.docx4j.wml.Tbl) tbltest;
-                             org.docx4j.wml.TblGrid tblGrid=tbl.getTblGrid();
-                             
-                             
-                             if(tblGrid==null) {
-                            	 
-                            	// 각 행의 높이 자동 조정
-                                 for (Object tblChild : tbl.getContent()) {
-                                     if (tblChild instanceof org.docx4j.wml.Tr) {
-                                         org.docx4j.wml.Tr tr = (org.docx4j.wml.Tr) tblChild;
-                                         
-                                         
-                                         
-                                         
-                                         org.docx4j.wml.TrPr trPr = tr.getTrPr();
-                                         if (trPr == null) {
-                                             trPr = new org.docx4j.wml.TrPr();
-                                             tr.setTrPr(trPr);
-                                         }
-                                         
-                                         // 현재 행의 셀 개수
-                                         int cellCount = 0;
-                                         java.util.List<Object> cellsToRemove = new java.util.ArrayList<>();
-
-                                         
-                                         // 각 셀의 너비 자동 조정
-                                         for (Object trChild : tr.getContent()) {
-                                        	 
-                                        	 
-                                        	 if(trChild instanceof javax.xml.bind.JAXBElement) {
-                                            	 javax.xml.bind.JAXBElement jaxbElementTc = (javax.xml.bind.JAXBElement)trChild;
-                                              	Object tCtest=jaxbElementTc.getValue();
-                                              	
-                                                if (tCtest instanceof org.docx4j.wml.Tc) {
-                                                	
-                                                    cellCount++;
-                                                    // TblGrid 열 개수 초과 시 제거 대상 표시
-                                                    //if (cellCount > tblGridCols.size()) {
-                                                     //   cellsToRemove.add(trChild);
-                                                    //}
-                                                	
-                                                    org.docx4j.wml.Tc tc = (org.docx4j.wml.Tc) tCtest;
-                                                    org.docx4j.wml.TcPr tcPr = tc.getTcPr();
-                                                    if (tcPr == null) {
-                                                        tcPr = new org.docx4j.wml.TcPr();
-                                                        tc.setTcPr(tcPr);
-                                                    }
-                                                    
-                                                    // 셀 너비 제거 (테이블 자동 조정에 맡김)
-                                                    tcPr.setTcW(null);
-                                                }
-                                        	 }
-                                         }
-                                     }
-                                 }
-                            	 
-                            	 
-                            	 
-                            	 continue;
-                             }
-                             java.util.List<org.docx4j.wml.TblGridCol> tblGridCols = tblGrid.getGridCol();
-                             
-                             
-                             int[] dxaArray = new int[tblGridCols.size()];
-
-                             for (int i = 0; i < tblGridCols.size(); i++) {
-                            	 org.docx4j.wml.TblGridCol col = tblGridCols.get(i);
-
-                                 BigInteger w = col.getW();
-                                 dxaArray[i] = (w != null) ? w.intValue() : 0;
-                             }
-                             int[] dxaArrayResult=scaleToA4Px(dxaArray);
-                             
-                             
-                             for (int i = 0; i < tblGridCols.size(); i++) {
-                            	 org.docx4j.wml.TblGridCol col = tblGridCols.get(i);
-                            	 col.setW(BigInteger.valueOf(dxaArrayResult[i]));
-                             }
-                             
-                             
-                             // 테이블 속성 설정
-                             org.docx4j.wml.TblPr tblPr = tbl.getTblPr();
-                             if (tblPr == null) {
-                                 tblPr = new org.docx4j.wml.TblPr();
-                                 tbl.setTblPr(tblPr);
-                             }
-                             
-                             // 테이블 너비를 100% (페이지 너비)로 설정
-                             org.docx4j.wml.TblWidth tblW = new org.docx4j.wml.TblWidth();
-                             tblW.setW(java.math.BigInteger.valueOf(5000)); // 페이지 너비의 약 100%
-                             tblW.setType("pct");
-                             tblPr.setTblW(tblW);
-                             
-                             // 테이블 레이아웃을 Auto로 설정 (셀 내용에 따라 자동 조정)
-                             org.docx4j.wml.CTTblLayoutType tblLayout = new org.docx4j.wml.CTTblLayoutType();
-                             
-                             tblLayout.setType(STTblLayoutType.AUTOFIT);
-//                             tblLayout.setType(STTblLayoutType.FIXED);
-                             
-                             //tblLayout.setType("auto");
-                             tblPr.setTblLayout(tblLayout);
-                             
-                             // 각 행의 높이 자동 조정
-                             for (Object tblChild : tbl.getContent()) {
-                                 if (tblChild instanceof org.docx4j.wml.Tr) {
-                                     org.docx4j.wml.Tr tr = (org.docx4j.wml.Tr) tblChild;
-                                     
-                                     
-                                     
-                                     
-                                     org.docx4j.wml.TrPr trPr = tr.getTrPr();
-                                     if (trPr == null) {
-                                         trPr = new org.docx4j.wml.TrPr();
-                                         tr.setTrPr(trPr);
-                                     }
-                                     
-                                     // 현재 행의 셀 개수
-                                     int cellCount = 0;
-                                     java.util.List<Object> cellsToRemove = new java.util.ArrayList<>();
-
-                                     
-                                     // 각 셀의 너비 자동 조정
-                                     for (Object trChild : tr.getContent()) {
-                                    	 
-                                    	 
-                                    	 if(trChild instanceof javax.xml.bind.JAXBElement) {
-                                        	 javax.xml.bind.JAXBElement jaxbElementTc = (javax.xml.bind.JAXBElement)trChild;
-                                          	Object tCtest=jaxbElementTc.getValue();
-                                          	
-                                            if (tCtest instanceof org.docx4j.wml.Tc) {
-                                            	
-                                                cellCount++;
-                                                // TblGrid 열 개수 초과 시 제거 대상 표시
-                                                if (cellCount > tblGridCols.size()) {
-                                                    cellsToRemove.add(trChild);
-                                                }
-                                            	
-                                                org.docx4j.wml.Tc tc = (org.docx4j.wml.Tc) tCtest;
-                                                org.docx4j.wml.TcPr tcPr = tc.getTcPr();
-                                                if (tcPr == null) {
-                                                    tcPr = new org.docx4j.wml.TcPr();
-                                                    tc.setTcPr(tcPr);
-                                                }
-                                                
-                                                // 셀 너비 제거 (테이블 자동 조정에 맡김)
-                                                tcPr.setTcW(null);
-                                            }
-                                    	 }
-                                     }
-                                     
-                                     // 초과 셀 제거
-                                     for (Object cellToRemove : cellsToRemove) {
-                                         tr.getContent().remove(cellToRemove);
-                                     }
-                                 }
-                             }
-                             
-                             //System.out.println("✓ 테이블 너비 조정됨");
-                         }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            System.out.println("⚠ 테이블 너비 조정 중 오류: " + e.getMessage());
-        }
-    }
-    
-    
-    
-    private void applyDefaultFontToAllElements(Object obj, org.docx4j.wml.RFonts defaultFont) {
-        if (obj == null) return;
-        
-        // Document 처리 (최상위 객체)
-        if (obj instanceof org.docx4j.wml.Document) {
-            org.docx4j.wml.Document doc = (org.docx4j.wml.Document) obj;
-            org.docx4j.wml.Body body = doc.getBody();
-            if (body != null) {
-                applyDefaultFontToAllElements(body, defaultFont);
-            }
-            return;
-        }
-        
-        // Body 처리
-        if (obj instanceof org.docx4j.wml.Body) {
-            org.docx4j.wml.Body body = (org.docx4j.wml.Body) obj;
-            for (Object bodyChild : body.getContent()) {
-                applyDefaultFontToAllElements(bodyChild, defaultFont);
-            }
-            return;
-        }
-        
-        // 문단(P) 처리
-        if (obj instanceof org.docx4j.wml.P) {
-            org.docx4j.wml.P p = (org.docx4j.wml.P) obj;
-            java.util.List<Object> pContent = p.getContent();
-            for (Object pChild : pContent) {
-                applyDefaultFontToAllElements(pChild, defaultFont);
-            }
-            return;
-        }
-        
-        // 테이블(Tbl) 처리
-        if (obj instanceof org.docx4j.wml.Tbl) {
-            org.docx4j.wml.Tbl tbl = (org.docx4j.wml.Tbl) obj;
-            for (Object tblChild : tbl.getContent()) {
-                applyDefaultFontToAllElements(tblChild, defaultFont);
-            }
-            return;
-        }
-        
-        // 테이블 행(Tr) 처리
-        if (obj instanceof org.docx4j.wml.Tr) {
-            org.docx4j.wml.Tr tr = (org.docx4j.wml.Tr) obj;
-            for (Object trChild : tr.getContent()) {
-                applyDefaultFontToAllElements(trChild, defaultFont);
-            }
-            return;
-        }
-        
-        // 테이블 셀(Tc) 처리
-        if (obj instanceof org.docx4j.wml.Tc) {
-            org.docx4j.wml.Tc tc = (org.docx4j.wml.Tc) obj;
-            for (Object tcChild : tc.getContent()) {
-                applyDefaultFontToAllElements(tcChild, defaultFont);
-            }
-            return;
-        }
-        
-        if (obj instanceof javax.xml.bind.JAXBElement) {
-        	javax.xml.bind.JAXBElement jaxbElement = (javax.xml.bind.JAXBElement)obj;
-        	Object tbltest=jaxbElement.getValue();
-        	applyDefaultFontToAllElements(tbltest, defaultFont);
-        	return;
-        }
-        
-        
-        // 텍스트 런(R) 처리 - 실제 폰트 적용
-        if (obj instanceof org.docx4j.wml.R) {
-            org.docx4j.wml.R r = (org.docx4j.wml.R) obj;
-            org.docx4j.wml.RPr rPr = r.getRPr();
-            if (rPr == null) {
-                rPr = new org.docx4j.wml.RPr();
-                r.setRPr(rPr);
-            }
-            org.docx4j.wml.RFonts rFonts = rPr.getRFonts();
-            if (rFonts == null || (rFonts.getAscii() == null && rFonts.getHAnsi() == null)) {
-                if (rFonts == null) {
-                    rFonts = new org.docx4j.wml.RFonts();
-                }
-                rFonts.setAscii("맑은 고딕");
-                rFonts.setHAnsi("맑은 고딕");
-                rFonts.setCs("맑은 고딕");
-                rPr.setRFonts(rFonts);
-                //System.out.println("✓ 폰트 적용됨");
-            }else if(rFonts.getHAnsi().equals("Times New Roman")) {
-                rFonts.setAscii("맑은 고딕");
-                rFonts.setHAnsi("맑은 고딕");
-                rFonts.setCs("맑은 고딕");
-                rPr.setRFonts(rFonts);
-            }
-            return;
-        }
-        
-        //System.out.println("other class="+obj.getClass());
-    }
-    
-    
-    
-    
-    
-    
-    
-    
-    
 	private void removeAndFixDuplicateIds(WordprocessingMLPackage wordMLPackage) {
-		try {
-			org.docx4j.wml.Document doc = wordMLPackage.getMainDocumentPart().getContents();
-			Set<Long> usedIds = new HashSet<>();
-			Set<String> usedBookmarkNames = new HashSet<>();
-			
-			if (doc.getBody() != null) {
-				removeAndFixDuplicateIdsRecursive(doc.getBody(), usedIds,usedBookmarkNames);
-			}
-			
-		} catch (Exception e) {
-			System.out.println("âš  ID ì¤'ë³µ ì œê±° ì¤' ì˜¤ë¥˜: " + e.getMessage());
-		}
+	    try {
+	        org.docx4j.wml.Document doc = wordMLPackage.getMainDocumentPart().getContents();
+	        Set<Long> usedIds = new HashSet<>();
+	        Set<String> usedBookmarkNames = new HashSet<>();
+	        
+	        if (doc.getBody() != null) {
+	            removeAndFixDuplicateIdsRecursive(doc.getBody(), usedIds, usedBookmarkNames);
+	        }
+	        
+	    } catch (Exception e) {
+	        System.out.println("⚠  ID複製修正中のエラー: " + e.getMessage());
+	    }
 	}
-    
-    
-    private void removeAndFixDuplicateIdsRecursive(Object obj, Set<Long> usedIds, Set<String> usedBookmarkNames) {
-		if (obj == null) return;
+	
+	private void removeAndFixDuplicateIdsRecursive(Object obj, Set<Long> usedIds, Set<String> usedBookmarkNames) {
+	    if (obj == null) return;
 
-		if (obj instanceof javax.xml.bind.JAXBElement) {
-			javax.xml.bind.JAXBElement jaxbElement = (javax.xml.bind.JAXBElement) obj;
-			removeAndFixDuplicateIdsRecursive(jaxbElement.getValue(), usedIds,usedBookmarkNames);
-			return;
-		}
-		
-		
-		if (obj instanceof org.docx4j.wml.CTBookmark) {
-			org.docx4j.wml.CTBookmark bookmarkStart = (org.docx4j.wml.CTBookmark) obj;
-			try {
-				BigInteger id = bookmarkStart.getId();
-				
-				String name = bookmarkStart.getName();
-				
-				if (name != null && !name.isEmpty()) {
-					if (usedBookmarkNames.contains(name)) {
-						bookmarkStart.setName(null);
-					} else {
-						usedBookmarkNames.add(name);
-					}
-				}
-				
-				if (id != null) {
-					Long idValue = id.longValue();
-					if (usedIds.contains(idValue)) {
-						bookmarkStart.setId(null);
-					} else {
-						usedIds.add(idValue);
-					}
-				}
-			} catch (Exception e) {
-			}
-			return;
-		}
-		
+	    if (obj instanceof JAXBElement) {
+	        JAXBElement jaxbElement = (JAXBElement) obj;
+	        removeAndFixDuplicateIdsRecursive(jaxbElement.getValue(), usedIds, usedBookmarkNames);
+	        return;
+	    }
+	    
+	    if (obj instanceof org.docx4j.wml.CTBookmark) {
+	        org.docx4j.wml.CTBookmark bookmarkStart = (org.docx4j.wml.CTBookmark) obj;
+	        try {
+	            BigInteger id = bookmarkStart.getId();
+	            String name = bookmarkStart.getName();
+	            
+	            if (name != null && !name.isEmpty()) {
+	                if (usedBookmarkNames.contains(name)) {
+	                    bookmarkStart.setName("");
+	                } else {
+	                    usedBookmarkNames.add(name);
+	                }
+	            }
+	            
+	            if (id != null) {
+	                Long idValue = id.longValue();
+	                if (usedIds.contains(idValue)) {
+	                    bookmarkStart.setId(new BigInteger(""));
+	                } else {
+	                    usedIds.add(idValue);
+	                }
+	            }
+	        } catch (Exception e) {
+	        }
+	        return;
+	    }
 
-		// Body
-		if (obj instanceof org.docx4j.wml.Body) {
-			org.docx4j.wml.Body body = (org.docx4j.wml.Body) obj;
-			for (Object child : body.getContent()) {
-				removeAndFixDuplicateIdsRecursive(child, usedIds,usedBookmarkNames);
-			}
-			return;
-		}
+	    if (obj instanceof org.docx4j.wml.Body) {
+	        org.docx4j.wml.Body body = (org.docx4j.wml.Body) obj;
+	        for (Object child : body.getContent()) {
+	            removeAndFixDuplicateIdsRecursive(child, usedIds, usedBookmarkNames);
+	        }
+	        return;
+	    }
 
-		// Paragraph
-		if (obj instanceof org.docx4j.wml.P) {
-			org.docx4j.wml.P p = (org.docx4j.wml.P) obj;
-			for (Object child : p.getContent()) {
-				removeAndFixDuplicateIdsRecursive(child, usedIds,usedBookmarkNames);
-			}
-			return;
-		}
+	    if (obj instanceof org.docx4j.wml.P) {
+	        org.docx4j.wml.P p = (org.docx4j.wml.P) obj;
+	        for (Object child : p.getContent()) {
+	            removeAndFixDuplicateIdsRecursive(child, usedIds, usedBookmarkNames);
+	        }
+	        return;
+	    }
 
-		// Run
-		if (obj instanceof org.docx4j.wml.R) {
-			org.docx4j.wml.R r = (org.docx4j.wml.R) obj;
-			for (Object child : r.getContent()) {
-				removeAndFixDuplicateIdsRecursive(child, usedIds,usedBookmarkNames);
-			}
-			return;
-		}
+	    if (obj instanceof org.docx4j.wml.R) {
+	        org.docx4j.wml.R r = (org.docx4j.wml.R) obj;
+	        for (Object child : r.getContent()) {
+	            removeAndFixDuplicateIdsRecursive(child, usedIds, usedBookmarkNames);
+	        }
+	        return;
+	    }
 
-		// Run Properties
-		// RPr 처리 부분 - getElem() 대신 getContent() 사용
-		// Run Properties
-		if (obj instanceof org.docx4j.wml.RPr) {
-		    org.docx4j.wml.RPr rPr = (org.docx4j.wml.RPr) obj;
-		    try {
-		        // PPr 객체의 모든 필드를 reflection으로 접근
-		        java.lang.reflect.Field[] fields = rPr.getClass().getDeclaredFields();
-		        for (java.lang.reflect.Field field : fields) {
-		            field.setAccessible(true);
-		            Object fieldValue = field.get(rPr);
-		            if (fieldValue != null) {
-		                removeAndFixDuplicateIdsRecursive(fieldValue, usedIds,usedBookmarkNames);
-		            }
-		        }
-		    } catch (Exception e) {
-		        // 필드 접근 실패 무시
-		    }
-		    return;
-		}
+	    if (obj instanceof org.docx4j.wml.RPr) {
+	        org.docx4j.wml.RPr rPr = (org.docx4j.wml.RPr) obj;
+	        try {
+	            java.lang.reflect.Field[] fields = rPr.getClass().getDeclaredFields();
+	            for (java.lang.reflect.Field field : fields) {
+	                field.setAccessible(true);
+	                Object fieldValue = field.get(rPr);
+	                if (fieldValue != null) {
+	                    removeAndFixDuplicateIdsRecursive(fieldValue, usedIds, usedBookmarkNames);
+	                }
+	            }
+	        } catch (Exception e) {
+	        }
+	        return;
+	    }
 
-		// Drawing
-		if (obj instanceof org.docx4j.wml.Drawing) {
-			org.docx4j.wml.Drawing drawing = (org.docx4j.wml.Drawing) obj;
-			java.util.List<Object> drawingContent = drawing.getAnchorOrInline();
-			if (drawingContent != null) {
-				for (Object child : drawingContent) {
-					removeAndFixDuplicateIdsRecursive(child, usedIds,usedBookmarkNames);
-				}
-			}
-			return;
-		}
+	    if (obj instanceof org.docx4j.wml.Drawing) {
+	        org.docx4j.wml.Drawing drawing = (org.docx4j.wml.Drawing) obj;
+	        java.util.List<Object> drawingContent = drawing.getAnchorOrInline();
+	        if (drawingContent != null) {
+	            for (Object child : drawingContent) {
+	                removeAndFixDuplicateIdsRecursive(child, usedIds, usedBookmarkNames);
+	            }
+	        }
+	        return;
+	    }
 
-		// Inline (인라인)
-		if (obj instanceof org.docx4j.dml.wordprocessingDrawing.Inline) {
-		    org.docx4j.dml.wordprocessingDrawing.Inline inline = 
-		        (org.docx4j.dml.wordprocessingDrawing.Inline) obj;
-		    try {
-		        // docPr의 실제 타입을 확인하고 처리
-		        Object docPr = inline.getDocPr();
-		        if (docPr != null) {
-		            // reflection을 사용해 안전하게 ID 접근
-		            java.lang.reflect.Method getIdMethod = docPr.getClass().getMethod("getId");
-		            Long id = (Long) getIdMethod.invoke(docPr);
-		            
-		            if (id != null && usedIds.contains(id)) {
-		                java.lang.reflect.Method setIdMethod = docPr.getClass().getMethod("setId", Long.class);
-		                setIdMethod.invoke(docPr, (Long) null);
-		            } else if (id != null) {
-		                usedIds.add(id);
-		            }
-		        }
-		    } catch (Exception e) {
-		        // 메서드 호출 실패 무시
-		    }
-		    return;
-		}
+	    if (obj instanceof org.docx4j.dml.wordprocessingDrawing.Inline) {
+	        org.docx4j.dml.wordprocessingDrawing.Inline inline = 
+	            (org.docx4j.dml.wordprocessingDrawing.Inline) obj;
+	        try {
+	            Object docPr = inline.getDocPr();
+	            if (docPr != null) {
+	                java.lang.reflect.Method getIdMethod = docPr.getClass().getMethod("getId");
+	                Long id = (Long) getIdMethod.invoke(docPr);
+	                
+	                if (id != null && usedIds.contains(id)) {
+	                    java.lang.reflect.Method setIdMethod = docPr.getClass().getMethod("setId", Long.class);
+	                    setIdMethod.invoke(docPr, (Long) null);
+	                } else if (id != null) {
+	                    usedIds.add(id);
+	                }
+	            }
+	        } catch (Exception e) {
+	        }
+	        return;
+	    }
 
-		// Anchor (앵커)
-		if (obj instanceof org.docx4j.dml.wordprocessingDrawing.Anchor) {
-		    org.docx4j.dml.wordprocessingDrawing.Anchor anchor = 
-		        (org.docx4j.dml.wordprocessingDrawing.Anchor) obj;
-		    try {
-		        Object docPr = anchor.getDocPr();
-		        if (docPr != null) {
-		            java.lang.reflect.Method getIdMethod = docPr.getClass().getMethod("getId");
-		            Long id = (Long) getIdMethod.invoke(docPr);
-		            
-		            if (id != null && usedIds.contains(id)) {
-		                java.lang.reflect.Method setIdMethod = docPr.getClass().getMethod("setId", Long.class);
-		                setIdMethod.invoke(docPr, (Long) null);
-		            } else if (id != null) {
-		                usedIds.add(id);
-		            }
-		        }
-		    } catch (Exception e) {
-		        // 메서드 호출 실패 무시
-		    }
-		    return;
-		}
+	    if (obj instanceof org.docx4j.dml.wordprocessingDrawing.Anchor) {
+	        org.docx4j.dml.wordprocessingDrawing.Anchor anchor = 
+	            (org.docx4j.dml.wordprocessingDrawing.Anchor) obj;
+	        try {
+	            Object docPr = anchor.getDocPr();
+	            if (docPr != null) {
+	                java.lang.reflect.Method getIdMethod = docPr.getClass().getMethod("getId");
+	                Long id = (Long) getIdMethod.invoke(docPr);
+	                
+	                if (id != null && usedIds.contains(id)) {
+	                    java.lang.reflect.Method setIdMethod = docPr.getClass().getMethod("setId", Long.class);
+	                    setIdMethod.invoke(docPr, (Long) null);
+	                } else if (id != null) {
+	                    usedIds.add(id);
+	                }
+	            }
+	        } catch (Exception e) {
+	        }
+	        return;
+	    }
 
-		// Table
-		if (obj instanceof org.docx4j.wml.Tbl) {
-			org.docx4j.wml.Tbl tbl = (org.docx4j.wml.Tbl) obj;
-			for (Object child : tbl.getContent()) {
-				removeAndFixDuplicateIdsRecursive(child, usedIds,usedBookmarkNames);
-			}
-			return;
-		}
+	    if (obj instanceof org.docx4j.wml.Tbl) {
+	        org.docx4j.wml.Tbl tbl = (org.docx4j.wml.Tbl) obj;
+	        for (Object child : tbl.getContent()) {
+	            removeAndFixDuplicateIdsRecursive(child, usedIds, usedBookmarkNames);
+	        }
+	        return;
+	    }
 
-		// Table Row
-		if (obj instanceof org.docx4j.wml.Tr) {
-			org.docx4j.wml.Tr tr = (org.docx4j.wml.Tr) obj;
-			for (Object child : tr.getContent()) {
-				removeAndFixDuplicateIdsRecursive(child, usedIds,usedBookmarkNames);
-			}
-			return;
-		}
+	    if (obj instanceof org.docx4j.wml.Tr) {
+	        org.docx4j.wml.Tr tr = (org.docx4j.wml.Tr) obj;
+	        for (Object child : tr.getContent()) {
+	            removeAndFixDuplicateIdsRecursive(child, usedIds, usedBookmarkNames);
+	        }
+	        return;
+	    }
 
-		// Table Cell
-		if (obj instanceof org.docx4j.wml.Tc) {
-			org.docx4j.wml.Tc tc = (org.docx4j.wml.Tc) obj;
-			for (Object child : tc.getContent()) {
-				removeAndFixDuplicateIdsRecursive(child, usedIds,usedBookmarkNames);
-			}
-			return;
-		}
+	    if (obj instanceof org.docx4j.wml.Tc) {
+	        org.docx4j.wml.Tc tc = (org.docx4j.wml.Tc) obj;
+	        for (Object child : tc.getContent()) {
+	            removeAndFixDuplicateIdsRecursive(child, usedIds, usedBookmarkNames);
+	        }
+	        return;
+	    }
 	}
-    
-    
-    
-    
+	
+	
+	
+	
+	
+	
+	// ==========================================
+	// 새로운 메서드 추가 (클래스 내부)
+	// ==========================================
 
+	private void applyLineSpacingToAllParagraphs(WordprocessingMLPackage wordMLPackage) {
+	    try {
+	        org.docx4j.wml.Document doc = wordMLPackage.getMainDocumentPart().getContents();
+	        if (doc.getBody() != null) {
+	            applyLineSpacingRecursive(doc.getBody());
+	        }
+	    } catch (Exception e) {
+	        System.out.println("⚠  줄간격 적용 중 오류: " + e.getMessage());
+	        e.printStackTrace();
+	    }
+	}
+
+	private void applyLineSpacingRecursive(Object obj) {
+	    if (obj == null) return;
+
+	    if (obj instanceof org.docx4j.wml.Body) {
+	        org.docx4j.wml.Body body = (org.docx4j.wml.Body) obj;
+	        for (Object child : body.getContent()) {
+	            applyLineSpacingRecursive(child);
+	        }
+	        return;
+	    }
+
+	    if (obj instanceof JAXBElement) {
+	        JAXBElement jaxbElement = (JAXBElement) obj;
+	        applyLineSpacingRecursive(jaxbElement.getValue());
+	        return;
+	    }
+
+	    if (obj instanceof org.docx4j.wml.P) {
+	        org.docx4j.wml.P p = (org.docx4j.wml.P) obj;
+	        org.docx4j.wml.PPr pPr = p.getPPr();
+	        
+	        if (pPr != null) {
+	            org.docx4j.wml.PPrBase.Spacing spacing = pPr.getSpacing();
+	            
+	            if (spacing != null && spacing.getLine() != null) {
+	                BigInteger lineValue = spacing.getLine();
+	                
+	                // lineRule 설정
+	                if (spacing.getLineRule() == null) {
+	                    spacing.setLineRule(STLineSpacingRule.AUTO);
+	                }
+	                
+	                // 줄간격 값 분석 및 로깅
+	                double lineHeightPt = lineValue.doubleValue() / 20.0;
+	                System.out.println("  - 적용된 줄간격: " + lineHeightPt + "pt (원본값: " + lineValue + ")");
+	            }
+	        }
+	        
+	        for (Object child : p.getContent()) {
+	            applyLineSpacingRecursive(child);
+	        }
+	        return;
+	    }
+
+	    if (obj instanceof org.docx4j.wml.Tbl) {
+	        org.docx4j.wml.Tbl tbl = (org.docx4j.wml.Tbl) obj;
+	        for (Object child : tbl.getContent()) {
+	            applyLineSpacingRecursive(child);
+	        }
+	        return;
+	    }
+
+	    if (obj instanceof org.docx4j.wml.Tr) {
+	        org.docx4j.wml.Tr tr = (org.docx4j.wml.Tr) obj;
+	        for (Object child : tr.getContent()) {
+	            applyLineSpacingRecursive(child);
+	        }
+	        return;
+	    }
+
+	    if (obj instanceof org.docx4j.wml.Tc) {
+	        org.docx4j.wml.Tc tc = (org.docx4j.wml.Tc) obj;
+	        for (Object child : tc.getContent()) {
+	            applyLineSpacingRecursive(child);
+	        }
+	        return;
+	    }
+	}
+	
+	
+	// ==========================================
+	// FOP 설정 초기화 메서드 (새로 추가)
+	// ==========================================
+
+	private void initializeFopConfiguration() {
+	    try {
+	        // FOP 라인 높이 수정 활성화
+	        System.setProperty("docx4j.convert.out.pdf.viaXSLFO.lineHeightFix", "true");
+	        
+	        // FOP 설정 클래스 초기화
+	        System.setProperty("org.apache.fop.dont-load-config-from-classpath", "true");
+	        
+	        // 글자 크기 기반 줄간격 계산 활성화
+	        System.setProperty("docx4j.convert.out.pdf.viaXSLFO.lineHeightCorrection", "true");
+	        
+	        System.out.println("✓ FOP 설정 초기화 완료");
+	        
+	    } catch (Exception e) {
+	        System.out.println("⚠  FOP 설정 초기화 중 오류: " + e.getMessage());
+	    }
+	}
+	
+	
+	
+	private void preserveLineSpacingAndEmptyParagraphs(WordprocessingMLPackage wordMLPackage) {
+	    try {
+	        org.docx4j.wml.Document doc = wordMLPackage.getMainDocumentPart().getContents();
+	        if (doc.getBody() != null) {
+	            preserveLineSpacingRecursive(doc.getBody());
+	        }
+	    } catch (Exception e) {
+	        System.out.println("⚠  행간 보존 중 오류: " + e.getMessage());
+	    }
+	}
+
+	private void preserveLineSpacingRecursive(Object obj) {
+	    if (obj == null) return;
+
+	    if (obj instanceof org.docx4j.wml.Body) {
+	        org.docx4j.wml.Body body = (org.docx4j.wml.Body) obj;
+	        for (Object child : body.getContent()) {
+	            preserveLineSpacingRecursive(child);
+	        }
+	        return;
+	    }
+
+	    if (obj instanceof JAXBElement) {
+	        JAXBElement jaxbElement = (JAXBElement) obj;
+	        preserveLineSpacingRecursive(jaxbElement.getValue());
+	        return;
+	    }
+
+	    if (obj instanceof org.docx4j.wml.P) {
+	        org.docx4j.wml.P p = (org.docx4j.wml.P) obj;
+	        org.docx4j.wml.PPr pPr = p.getPPr();
+	        
+	        if (pPr == null) {
+	            pPr = new org.docx4j.wml.PPr();
+	            p.setPPr(pPr);
+	        }
+	        
+	        // ============================================
+	        // spacing 속성 확인 및 보정
+	        // ============================================
+	        org.docx4j.wml.PPrBase.Spacing spacing = pPr.getSpacing();
+	        
+	        if (spacing == null) {
+	            spacing = new org.docx4j.wml.PPrBase.Spacing();
+	            pPr.setSpacing(spacing);
+	        }
+	        
+	        // w:before (단락 앞 공백)
+	        if (spacing.getBefore() == null) {
+	            spacing.setBefore(BigInteger.ZERO);
+	        }
+	        System.out.println("  - w:before: " + spacing.getBefore());
+	        
+	        // w:after (단락 뒤 공백) - 중요!
+	        if (spacing.getAfter() == null) {
+	            spacing.setAfter(BigInteger.ZERO);
+	        }
+	        System.out.println("  - w:after: " + spacing.getAfter());
+	        
+	        // w:line (줄간격)
+	        if (spacing.getLine() != null) {
+	            BigInteger lineValue = spacing.getLine();
+	            
+	            // lineRule 확인
+	            if (spacing.getLineRule() == null) {
+	                spacing.setLineRule(STLineSpacingRule.AUTO);
+	            }
+	            
+	            System.out.println("  - w:line: " + lineValue + " (" + spacing.getLineRule() + ")");
+	            
+	            // 줄간격이 480 이상이면 AUTO 모드 유지
+	            if (lineValue.compareTo(BigInteger.valueOf(480)) >= 0) {
+	                spacing.setLineRule(STLineSpacingRule.AUTO);
+	                System.out.println("  - 큰 줄간격 감지: AUTO 모드로 설정");
+	            }
+	        } else {
+	            // w:line이 없으면 기본값 설정
+	            spacing.setLine(BigInteger.valueOf(240));
+	            spacing.setLineRule(STLineSpacingRule.AUTO);
+	            System.out.println("  - 기본 줄간격 설정: 240 (AUTO)");
+	        }
+	        
+	        // ============================================
+	        // 단행 단락(빈 단락) 유지
+	        // ============================================
+	        if (p.getContent().isEmpty()) {
+	            org.docx4j.wml.R r = new org.docx4j.wml.R();
+	            p.getContent().add(r);
+	        }
+	        
+	        for (Object child : p.getContent()) {
+	            preserveLineSpacingRecursive(child);
+	        }
+	        return;
+	    }
+
+	    if (obj instanceof org.docx4j.wml.Tbl) {
+	        org.docx4j.wml.Tbl tbl = (org.docx4j.wml.Tbl) obj;
+	        for (Object child : tbl.getContent()) {
+	            preserveLineSpacingRecursive(child);
+	        }
+	        return;
+	    }
+
+	    if (obj instanceof org.docx4j.wml.Tr) {
+	        org.docx4j.wml.Tr tr = (org.docx4j.wml.Tr) obj;
+	        for (Object child : tr.getContent()) {
+	            preserveLineSpacingRecursive(child);
+	        }
+	        return;
+	    }
+
+	    if (obj instanceof org.docx4j.wml.Tc) {
+	        org.docx4j.wml.Tc tc = (org.docx4j.wml.Tc) obj;
+	        for (Object child : tc.getContent()) {
+	            preserveLineSpacingRecursive(child);
+	        }
+	        return;
+	    }
+	}
 }

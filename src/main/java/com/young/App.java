@@ -29,10 +29,10 @@ public class App {
 		
 //		String filename="한국가스공사";
 //		String filename="상세침투결과";
-		String filename="DST0000014_ERR";
+		String filename="error";
 		
         String inputfilepath = mainfilepath + filename+ ".docx";
-        String outputfilepath = mainfilepath + "output2_"+filename+".pdf";
+        String outputfilepath = mainfilepath + "output903_"+filename+".pdf";
 
         String chageoutputfilepath = mainfilepath + "changeoutput_"+filename+".pdf";
         
