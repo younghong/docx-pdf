@@ -985,7 +985,7 @@ public class docx2pdf {
 	                
 	                //spacing.setAfter(BigInteger.valueOf(480));
 	                spacing.setAfter(spacing.getLine());
-	                spacing.setBefore(spacing.getLine());
+	                
 	                
 	                System.out.println("  - 큰 줄간격 감지: AUTO 모드로 설정");
 	            }
